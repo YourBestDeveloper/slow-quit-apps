@@ -1,150 +1,145 @@
 import Cocoa
-import Combine
 
 /// 退出进度控制器
-/// 负责协调键盘事件监听和退出进度显示
+/// 核心逻辑：keyDown 开始计时，keyUp 停止计时，达到时间执行退出
 @MainActor
 final class QuitProgressController: KeyEventDelegate {
-    /// 单例实例
     static let shared = QuitProgressController()
     
     /// 进度更新定时器
-    private var progressTimer: Timer?
+    private var timer: Timer?
     
-    /// 按键开始时间
-    private var keyDownStartTime: Date?
+    /// 按下开始时间
+    private var startTime: Date?
     
-    /// 应用状态
+    /// 当前目标应用
+    private var targetApp: NSRunningApplication?
+    
+    /// 是否正在计时
+    private var isRunning = false
+    
+    /// 安全超时阈值（秒）- 防止定时器泄漏
+    /// 如果超过 holdDuration + 此值没有收到 keyUp，强制停止
+    private let safetyTimeout: TimeInterval = 1.0
+    
     private let appState = AppState.shared
-    
-    /// 覆盖窗口
     private let overlayWindow = QuitOverlayWindow.shared
     
     private init() {}
     
     // MARK: - 公开方法
     
-    /// 启动控制器
     func start() {
         KeyEventMonitor.shared.delegate = self
         KeyEventMonitor.shared.startMonitoring()
     }
     
-    /// 停止控制器
     func stop() {
         KeyEventMonitor.shared.stopMonitoring()
-        cancelProgress()
+        stopTimer()
     }
     
     // MARK: - KeyEventDelegate
     
     func keyEventMonitor(_ monitor: KeyEventMonitor, didReceiveKeyDown event: KeyEvent) {
-        handleKeyDown(event)
+        // 已经在计时中，忽略重复的 keyDown（键盘重复）
+        guard !isRunning else { return }
+        
+        guard appState.isEnabled else {
+            // 禁用时直接退出
+            NSWorkspace.shared.frontmostApplication?.terminate()
+            return
+        }
+        
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              let bundleId = app.bundleIdentifier else { return }
+        
+        // 白名单应用直接退出
+        if appState.isAppExcluded(bundleId) {
+            app.terminate()
+            return
+        }
+        
+        // 开始计时
+        startTimer(for: app)
     }
     
     func keyEventMonitor(_ monitor: KeyEventMonitor, didReceiveKeyUp event: KeyEvent) {
-        handleKeyUp(event)
+        // keyUp 立即停止
+        stopTimer()
     }
     
-    // MARK: - 私有方法
+    // MARK: - 计时器
     
-    /// 处理按键按下
-    private func handleKeyDown(_ event: KeyEvent) {
-        guard appState.isEnabled else {
-            // 功能禁用时，直接退出前台应用
-            quitFrontmostApp()
-            return
-        }
+    private func startTimer(for app: NSRunningApplication) {
+        // 先清理可能遗留的定时器
+        stopTimer()
         
-        // 获取前台应用
-        guard let frontApp = NSWorkspace.shared.frontmostApplication,
-              let bundleId = frontApp.bundleIdentifier else {
-            return
-        }
+        isRunning = true
+        startTime = Date()
+        targetApp = app
         
-        // 检查是否在排除列表中
-        if appState.isAppExcluded(bundleId) {
-            quitApp(frontApp)
-            return
-        }
-        
-        // 开始进度计时
-        startProgress(for: frontApp)
-    }
-    
-    /// 处理按键释放
-    private func handleKeyUp(_ event: KeyEvent) {
-        cancelProgress()
-    }
-    
-    /// 开始进度计时
-    private func startProgress(for app: NSRunningApplication) {
         let appName = app.localizedName ?? "未知应用"
-        let bundleId = app.bundleIdentifier ?? ""
-        
-        keyDownStartTime = Date()
-        appState.startQuitProgress(for: bundleId)
-        
-        // 显示覆盖窗口
         overlayWindow.show(appName: appName)
+        appState.startQuitProgress(for: app.bundleIdentifier ?? "")
         
-        // 创建进度更新定时器
-        progressTimer = Timer.scheduledTimer(withTimeInterval: Constants.Progress.updateInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.updateProgress(for: app)
+        // 60fps 更新进度
+        let newTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.tick()
             }
         }
+        timer = newTimer
+        RunLoop.main.add(newTimer, forMode: .common)
     }
     
-    /// 更新进度
-    private func updateProgress(for app: NSRunningApplication) {
-        guard let startTime = keyDownStartTime else {
-            cancelProgress()
+    private func tick() {
+        // 安全检查：如果状态不一致，立即停止
+        guard isRunning,
+              let start = startTime,
+              let app = targetApp else {
+            stopTimer()
             return
         }
         
-        let elapsed = Date().timeIntervalSince(startTime)
-        let progress = elapsed / appState.holdDuration
+        // 检查目标应用是否还在运行
+        guard !app.isTerminated else {
+            stopTimer()
+            return
+        }
+        
+        let elapsed = Date().timeIntervalSince(start)
+        
+        // 安全超时检查：防止定时器泄漏
+        let maxDuration = appState.holdDuration + safetyTimeout
+        if elapsed > maxDuration {
+            print("⚠️ 安全超时，强制停止计时器")
+            stopTimer()
+            return
+        }
+        
+        let progress = min(1.0, elapsed / appState.holdDuration)
         
         appState.updateQuitProgress(progress)
         overlayWindow.updateProgress(progress)
         
-        // 达到目标时间，执行退出
         if progress >= 1.0 {
-            completeQuit(for: app)
+            // 达到目标，执行退出
+            let appToQuit = app
+            stopTimer()
+            appState.completeQuit()
+            appToQuit.terminate()
         }
     }
     
-    /// 取消进度
-    private func cancelProgress() {
-        progressTimer?.invalidate()
-        progressTimer = nil
-        keyDownStartTime = nil
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+        startTime = nil
+        targetApp = nil
+        isRunning = false
         
         appState.cancelQuitProgress()
         overlayWindow.hide()
-    }
-    
-    /// 完成退出
-    private func completeQuit(for app: NSRunningApplication) {
-        progressTimer?.invalidate()
-        progressTimer = nil
-        keyDownStartTime = nil
-        
-        appState.completeQuit()
-        overlayWindow.hide()
-        
-        quitApp(app)
-    }
-    
-    /// 退出指定应用
-    private func quitApp(_ app: NSRunningApplication) {
-        app.terminate()
-    }
-    
-    /// 退出前台应用
-    private func quitFrontmostApp() {
-        guard let app = NSWorkspace.shared.frontmostApplication else { return }
-        quitApp(app)
     }
 }

@@ -14,29 +14,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 应用状态
     private let appState = AppState.shared
     
+    /// 权限检查定时器
+    private var accessibilityCheckTimer: Timer?
+    
     // MARK: - 生命周期
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 检查无障碍权限
-        if !AccessibilityManager.shared.checkAndRequestIfNeeded() {
-            print("⚠️ 请先授予无障碍权限")
-        }
-        
         // 设置菜单栏图标
         setupStatusItem()
         
-        // 启动键盘监听
-        QuitProgressController.shared.start()
-        
         // 隐藏 Dock 图标（作为菜单栏应用运行）
         NSApp.setActivationPolicy(.accessory)
+        
+        // 检查无障碍权限并启动监听
+        startMonitoringWithAccessibilityCheck()
         
         print("✅ \(Constants.App.name) 已启动")
     }
     
     func applicationWillTerminate(_ notification: Notification) {
+        accessibilityCheckTimer?.invalidate()
         QuitProgressController.shared.stop()
         print("🛑 \(Constants.App.name) 已退出")
+    }
+    
+    // MARK: - 无障碍权限检查
+    
+    /// 启动监听并检查权限
+    private func startMonitoringWithAccessibilityCheck() {
+        if AccessibilityManager.shared.isAccessibilityEnabled {
+            // 已有权限，直接启动
+            print("✅ 无障碍权限已授予")
+            QuitProgressController.shared.start()
+        } else {
+            // 请求权限并开始轮询检查
+            print("⚠️ 请先授予无障碍权限，正在等待...")
+            AccessibilityManager.shared.requestAccessibility()
+            startAccessibilityPolling()
+        }
+    }
+    
+    /// 开始轮询检查权限状态
+    private func startAccessibilityPolling() {
+        accessibilityCheckTimer?.invalidate()
+        accessibilityCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                if AccessibilityManager.shared.isAccessibilityEnabled {
+                    self.accessibilityCheckTimer?.invalidate()
+                    self.accessibilityCheckTimer = nil
+                    print("✅ 无障碍权限已授予，正在启动监听...")
+                    QuitProgressController.shared.start()
+                }
+            }
+        }
     }
     
     // MARK: - 菜单栏图标
