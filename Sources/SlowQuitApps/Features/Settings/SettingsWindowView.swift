@@ -9,23 +9,54 @@ struct SettingsWindowView: View {
         // 通过访问 currentLanguage 确保语言变化时视图刷新
         let _ = i18n.currentLanguage
         
-        TabView {
-            Tab(t("settings.tabs.general"), systemImage: "gearshape") {
+        settingsContent
+            .scenePadding()
+    }
+    
+    // MARK: - 版本自适应 TabView
+    
+    @ViewBuilder
+    private var settingsContent: some View {
+        if #available(macOS 15.0, *) {
+            // macOS 15+ 使用新 Tab API
+            TabView {
+                Tab(t("settings.tabs.general"), systemImage: "gearshape") {
+                    GeneralSettingsView()
+                        .fixedSize()
+                }
+                
+                Tab(t("settings.tabs.appList"), systemImage: "app.badge.checkmark") {
+                    AppListSettingsView()
+                        .frame(minWidth: 450, minHeight: 300)
+                }
+                
+                Tab(t("settings.tabs.about"), systemImage: "info.circle") {
+                    AboutView()
+                        .fixedSize()
+                }
+            }
+        } else {
+            // macOS 14 使用旧版 tabItem API
+            TabView {
                 GeneralSettingsView()
                     .fixedSize()
-            }
-            
-            Tab(t("settings.tabs.appList"), systemImage: "app.badge.checkmark") {
+                    .tabItem {
+                        Label(t("settings.tabs.general"), systemImage: "gearshape")
+                    }
+                
                 AppListSettingsView()
                     .frame(minWidth: 450, minHeight: 300)
-            }
-            
-            Tab(t("settings.tabs.about"), systemImage: "info.circle") {
+                    .tabItem {
+                        Label(t("settings.tabs.appList"), systemImage: "app.badge.checkmark")
+                    }
+                
                 AboutView()
                     .fixedSize()
+                    .tabItem {
+                        Label(t("settings.tabs.about"), systemImage: "info.circle")
+                    }
             }
         }
-        .scenePadding()
     }
 }
 
