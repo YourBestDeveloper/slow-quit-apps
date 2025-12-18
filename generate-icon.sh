@@ -1,0 +1,1 @@
+chmod +x scripts/generate-icon.swift && swift scripts/generate-icon.swift
