@@ -10,6 +10,7 @@ BUNDLE_ID="com.slowquitapps.app"
 VERSION="1.0.0"
 BUILD_DIR=".build/release"
 APP_DIR="build/${APP_NAME}.app"
+DMG_NAME="${APP_NAME}-${VERSION}.dmg"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -36,7 +37,7 @@ mkdir -p "${APP_DIR}/Contents/Resources"
 # 4. 复制可执行文件
 cp "${BUILD_DIR}/${APP_NAME}" "${APP_DIR}/Contents/MacOS/"
 
-# 5. 创建 Info.plist
+# 5. 创建 Info.plist（关键：正确配置 GUI 应用）
 cat > "${APP_DIR}/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -72,6 +73,8 @@ cat > "${APP_DIR}/Contents/Info.plist" << EOF
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Slow Quit Apps 需要控制其他应用以实现延迟退出功能。</string>
 </dict>
 </plist>
 EOF
@@ -93,19 +96,48 @@ codesign --force --deep --sign - "${APP_DIR}"
 echo -e "${YELLOW}🔍 验证签名...${NC}"
 codesign --verify --verbose=2 "${APP_DIR}" 2>&1 || true
 
-# 10. 获取最终文件大小
+# 10. 创建 DMG 安装包（可选）
+if command -v create-dmg &> /dev/null || command -v hdiutil &> /dev/null; then
+    echo -e "${YELLOW}📀 创建 DMG 安装包...${NC}"
+    
+    # 创建临时目录
+    DMG_TEMP="build/dmg_temp"
+    mkdir -p "${DMG_TEMP}"
+    cp -R "${APP_DIR}" "${DMG_TEMP}/"
+    
+    # 创建指向 Applications 的符号链接
+    ln -s /Applications "${DMG_TEMP}/Applications"
+    
+    # 使用 hdiutil 创建 DMG
+    hdiutil create -volname "${APP_NAME}" \
+        -srcfolder "${DMG_TEMP}" \
+        -ov -format UDZO \
+        "build/${DMG_NAME}"
+    
+    # 清理临时目录
+    rm -rf "${DMG_TEMP}"
+    
+    echo -e "${GREEN}✓ DMG 已创建: build/${DMG_NAME}${NC}"
+fi
+
+# 11. 获取最终文件大小
 SIZE=$(du -sh "${APP_DIR}" | cut -f1)
 
 echo ""
 echo -e "${GREEN}✅ 构建完成！${NC}"
 echo -e "   应用位置: ${APP_DIR}"
 echo -e "   应用大小: ${SIZE}"
+if [ -f "build/${DMG_NAME}" ]; then
+    DMG_SIZE=$(du -sh "build/${DMG_NAME}" | cut -f1)
+    echo -e "   DMG 位置: build/${DMG_NAME}"
+    echo -e "   DMG 大小: ${DMG_SIZE}"
+fi
 echo ""
-echo -e "${YELLOW}💡 提示:${NC}"
-echo "   • 双击 ${APP_DIR} 即可运行"
-echo "   • 将应用拖到 /Applications 目录安装"
+echo -e "${YELLOW}💡 使用说明:${NC}"
+echo "   • 双击 ${APP_DIR} 或 DMG 安装后运行"
 echo "   • 首次运行需要授予辅助功能权限"
+echo "   • 应用会在菜单栏显示图标"
 echo ""
 
-# 可选：打开构建目录
-# open build/
+# 打开构建目录
+open build/

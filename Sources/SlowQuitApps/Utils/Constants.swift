@@ -36,10 +36,8 @@ enum Constants {
         /// 进度条窗口高度
         static let overlayHeight: CGFloat = 60
         /// 设置窗口宽度
-        static let settingsWidth: CGFloat = 600
+        static let settingsWidth: CGFloat = 500
         /// 设置窗口高度
-        static let settingsHeight: CGFloat = 400
-        /// 设置侧边栏宽度
-        static let sidebarWidth: CGFloat = 160
+        static let settingsHeight: CGFloat = 350
     }
 }

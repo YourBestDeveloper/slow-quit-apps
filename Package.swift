@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "SlowQuitApps",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v15)
     ],
     products: [
         .executable(name: "SlowQuitApps", targets: ["SlowQuitApps"])

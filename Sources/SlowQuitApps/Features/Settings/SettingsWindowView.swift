@@ -1,34 +1,25 @@
 import SwiftUI
 
 /// 设置窗口主视图
-/// 左右布局：左侧导航栏 + 右侧内容区，支持 Liquid Glass 效果
+/// 使用 Apple 官方推荐的 TabView 设置模式，自动适配 Liquid Glass 效果
 struct SettingsWindowView: View {
     var body: some View {
-        HStack(spacing: 0) {
-            // 左侧导航栏
-            SettingsSidebar()
-            
-            // 右侧内容区
-            SettingsContent()
-        }
-        .frame(
-            minWidth: Constants.Window.settingsWidth,
-            minHeight: Constants.Window.settingsHeight
-        )
-        .modifier(WindowGlassModifier())
-    }
-}
-
-/// 窗口玻璃效果修饰器
-private struct WindowGlassModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            // macOS 26+ 使用 Liquid Glass 容器
-            GlassEffectContainer {
-                content
+        TabView {
+            Tab("通用", systemImage: "gearshape") {
+                GeneralSettingsView()
+                    .fixedSize()
             }
-        } else {
-            content
+            
+            Tab("应用列表", systemImage: "app.badge.checkmark") {
+                AppListSettingsView()
+                    .frame(minWidth: 450, minHeight: 300)
+            }
+            
+            Tab("关于", systemImage: "info.circle") {
+                AboutView()
+                    .fixedSize()
+            }
         }
+        .scenePadding()
     }
 }
