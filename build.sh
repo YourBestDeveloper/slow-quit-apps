@@ -108,6 +108,18 @@ if command -v create-dmg &> /dev/null || command -v hdiutil &> /dev/null; then
     # 创建指向 Applications 的符号链接
     ln -s /Applications "${DMG_TEMP}/Applications"
     
+    # 复制多语言安装文档
+    DOCS_DIR="Resources/Docs"
+    if [ -d "${DOCS_DIR}" ]; then
+        echo -e "${YELLOW}📖 复制安装文档...${NC}"
+        mkdir -p "${DMG_TEMP}/Documentation"
+        cp "${DOCS_DIR}/README-en.md" "${DMG_TEMP}/Documentation/README (English).md" 2>/dev/null || true
+        cp "${DOCS_DIR}/README-zh-CN.md" "${DMG_TEMP}/Documentation/安装指南 (中文).md" 2>/dev/null || true
+        cp "${DOCS_DIR}/README-ja.md" "${DMG_TEMP}/Documentation/インストールガイド (日本語).md" 2>/dev/null || true
+        cp "${DOCS_DIR}/README-ru.md" "${DMG_TEMP}/Documentation/Руководство (Русский).md" 2>/dev/null || true
+        echo -e "${GREEN}✓ 已复制多语言文档${NC}"
+    fi
+    
     # 使用 hdiutil 创建 DMG
     hdiutil create -volname "${APP_NAME}" \
         -srcfolder "${DMG_TEMP}" \
